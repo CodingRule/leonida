@@ -685,6 +685,17 @@ int main(int argc, char** argv) {
     }
     if (status != vktest::DeviceStatus::ready) return 1;
     const char* shader = std::strcmp(argv[1], "--descriptors-only") == 0 ? nullptr : argv[1];
+    // The module arrives as a bare .spv, with no shader library whose index would tell the device which descriptor
+    // table layout it reads, and without one the device fills the plain layout: no kind word. A module from the
+    // translator's default (--descriptor-table tagged) then finds no array its T# is bound in and every store lands on
+    // the fallback. The kind word is additive, a plain module never reads it, so the tagged table suits either
+    // translation; LEONIDA_DESCRIPTOR_TABLE, when set, still decides.
+    if (shader) {
+        char layout[2]{};
+        std::size_t layout_size = 0;
+        if (getenv_s(&layout_size, layout, sizeof(layout), "LEONIDA_DESCRIPTOR_TABLE") == 0 && layout_size == 0)
+            _putenv_s("LEONIDA_DESCRIPTOR_TABLE", "tagged");
+    }
     VkPhysicalDeviceProperties props{};
     vk.instance_fn<PFN_vkGetPhysicalDeviceProperties>("vkGetPhysicalDeviceProperties")(vk.physical, &props);
     if (!vk.bindless || !vk.robust_image_access || (shader && props.limits.maxPushConstantsSize < push_bytes())) {
