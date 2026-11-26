@@ -1221,9 +1221,21 @@ int main() {
                 want_w = want_h = 0;  // the first present after a resize may still be at the old size (suboptimal swapchain)
                 for (int round = 0; round < 3; ++round) {
                     one = parameters(quad.source, &middle_half, xbox_scale_filter_point);
-                    // (A present the driver reports out of date right after the resize is not counted as shown, so the counter
-                    // is not checked here; the frame is still composed and read back.)
-                    EXPECT(present_planes(&one, 1));
+                    // A present the driver reports out of date right after the resize (NVIDIA on Windows does, at
+                    // vkQueuePresentKHR) is accepted but not shown: it is not counted, and the presenter hands out no
+                    // readback of a frame nobody saw. The next present recreates the swapchain, so only the first two
+                    // rounds may go unshown; the last one must be shown, at the new size.
+                    const std::uint64_t shown_before = xbox.presenter().composed_presents();
+                    clock.advance_us(4 * period);
+                    EXPECT(next_token(token));
+                    one.Token = token;
+                    EXPECT(xbox.PresentX(1, &one, nullptr) == S_OK);
+                    if (xbox.presenter().composed_presents() == shown_before) {
+                        EXPECT(round < 2);
+                        EXPECT(!grab(frame));  // not shown: no stale frame is handed out either
+                        continue;
+                    }
+                    EXPECT(grab(frame));
                     // Whatever size the frame has, it must be the composition at that size (no stale or mis-sized target).
                     Ref_plane resized = model(quad, &middle_half, true);
                     resized.dest[0] = middle_half.left * double(frame.extent.width);
